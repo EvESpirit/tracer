@@ -1,123 +1,110 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox
-import numpy as np
-import scipy.io.wavfile as wavfile
-import sys
+from tkinter import filedialog
+from a2b import AudioToBinary
 
 
-class BinaryToAudioGUI:
-    def __init__(self, master):
-        self.master = master
-        master.title("Binary to Audio Converter")
+class AudioToBinaryGUI(tk.Tk, AudioToBinary):
+    """
+    A GUI for the AudioToBinary class, allowing users to select input and output files,
+    convert audio files to binary using specified frequency and duration, and display 
+    conversion status.
 
-        # Set window size to 16:9 aspect ratio
-        screen_width = master.winfo_screenwidth()
-        screen_height = master.winfo_screenheight()
-        width = int(screen_width * 0.5)
-        height = int(width / 1.7777778)
-        x = int((screen_width - width) / 2)
-        y = int((screen_height - height) / 2)
-        master.geometry(f"{width}x{height}+{x}+{y}")
+    Parameters:
+        freq0 (int): The frequency for 0 bit.
+        freq1 (int): The frequency for 1 bit.
+        duration (float): The duration of each bit.
+        sample_rate (int): The sampling rate for the audio file.
 
-        # Create input file selection button and label
-        self.input_file_label = tk.Label(master, text="Input file:")
-        self.input_file_label.pack(anchor="w")
-        self.input_file_button = tk.Button(master, text="Select file", command=self.select_input_file)
-        self.input_file_button.pack(fill="x", pady=10)
+    Attributes:
+        status_label (tk.Label): A label displaying the conversion status.
+        input_entry (tk.Entry): An entry widget for input file path.
+        output_entry (tk.Entry): An entry widget for output file path.
 
-        # Create output file selection button and label
-        self.output_file_label = tk.Label(master, text="Output file:")
-        self.output_file_label.pack(anchor="w")
-        self.output_file_button = tk.Button(master, text="Select file", command=self.select_output_file)
-        self.output_file_button.pack(fill="x", pady=10)
+    """
 
-        # Create bit duration field and label
-        self.bit_duration_label = tk.Label(master, text="Bit duration (s):")
-        self.bit_duration_label.pack(anchor="w")
-        self.bit_duration_entry = tk.Entry(master)
-        self.bit_duration_entry.pack(fill="x", pady=10)
-        self.bit_duration_entry.insert(0, "0.01")
+    def __init__(self, freq0, freq1, duration, sample_rate):
+        """
+        Initializes the AudioToBinaryGUI with specified frequency, duration, and sampling rate.
+        """
+        tk.Tk.__init__(self)
+        AudioToBinary.__init__(self, freq0, freq1, duration, sample_rate)
+        self.title("Audio to Binary Converter")
+        self.build_gui()
 
-        # Create frequency fields and labels
-        self.freq0_label = tk.Label(master, text="Frequency for bit '0' (Hz):")
-        self.freq0_label.pack(anchor="w")
-        self.freq0_entry = tk.Entry(master)
-        self.freq0_entry.pack(fill="x", pady=10)
-        self.freq0_entry.insert(0, "1000")
-        self.freq1_label = tk.Label(master, text="Frequency for bit '1' (Hz):")
-        self.freq1_label.pack(anchor="w")
-        self.freq1_entry = tk.Entry(master)
-        self.freq1_entry.pack(fill="x", pady=10)
-        self.freq1_entry.insert(0, "2000")
+    def build_gui(self):
+        """
+        Builds the GUI for the AudioToBinary class, creating the input and output file widgets, 
+        convert button, and status label.
+        """
+        self.status_label = tk.Label(self, text="", fg="green")
+        self.status_label.grid(row=3, column=1, pady=(5, 20))
 
-        # Create start conversion button
-        self.convert_button = tk.Button(master, text="Convert", command=self.convert)
-        self.convert_button.pack(fill="x", pady=20)
+        input_label = tk.Label(self, text="Input File:")
+        input_label.grid(row=0, column=0, padx=(20, 5), pady=(20, 5), sticky="w")
 
-        # Initialize instance variables
-        self.input_file = None
-        self.output_file = None
-        self.freq0 = None
-        self.freq1 = None
-        self.duration = None
-        self.sample_rate = 44100
+        self.input_entry = tk.Entry(self, width=50)
+        self.input_entry.grid(row=0, column=1, padx=(5, 20), pady=(20, 5))
 
-    def select_input_file(self):
-        self.input_file = filedialog.askopenfilename()
-        self.input_file_label.config(text=f"Input file: {self.input_file}")
+        input_button = tk.Button(self, text="Browse", command=self.browse_input)
+        input_button.grid(row=0, column=2, padx=(5, 20), pady=(20, 5))
 
-    def select_output_file(self):
-        self.output_file = filedialog.asksaveasfilename(defaultextension=".wav")
-        self.output_file_label.config(text=f"Output file: {self.output_file}")
+        output_label = tk.Label(self, text="Output File:")
+        output_label.grid(row=1, column=0, padx=(20, 5), pady=(5, 20), sticky="w")
 
-    def generate_tone(self, bit):
-        if bit == '0':
-            freq = self.freq0
-        elif bit == '1':
-            freq = self.freq1
-        else:
-            raise ValueError("Invalid bit value")
+        self.output_entry = tk.Entry(self, width=50)
+        self.output_entry.grid(row=1, column=1, padx=(5, 20), pady=(5, 20))
 
-        t = np.linspace(0, self.duration, int(self.sample_rate * self.duration), False)
-        tone = np.sin(freq * 2 * np.pi * t)
-        return tone
+        output_button = tk.Button(self, text="Browse", command=self.browse_output)
+        output_button.grid(row=1, column=2, padx=(5, 20), pady=(5, 20))
 
-    def binary_to_audio(self):
-        with open(self.input_file, 'rb') as file:
-            binary_data = file.read()
+        convert_button = tk.Button(self, text="Convert", command=self.convert)
+        convert_button.grid(row=2, column=1, pady=(5, 20))
 
-        bit_string = ''.join(format(byte, '08b') for byte in binary_data)
-        audio_data = np.array([], dtype=np.float32)
+    def browse_input(self):
+        """
+        Opens a file dialog window for selecting the input file path.
+        """
+        file_path = filedialog.askopenfilename()
+        self.input_entry.delete(0, tk.END)
+        self.input_entry.insert(0, file_path)
 
-        for bit in bit_string:
-            tone = self.generate_tone(bit)
-            audio_data = np.concatenate((audio_data, tone))
-
-        wavfile.write(self.output_file, self.sample_rate, audio_data)
+    def browse_output(self):
+        """
+        Opens a file dialog window for selecting the output file path.
+        """
+        file_path = filedialog.asksaveasfilename()
+        self.output_entry.delete(0, tk.END)
+        self.output_entry.insert(0, file_path)
 
     def convert(self):
-        if not self.input_file:
-            messagebox.showerror("Error", "Please select an input file.")
+        """
+        Converts the selected input file to binary using specified frequency and duration,
+        and saves the output to the specified output file. Displays the status of the conversion in the status label.
+        """
+        input_file = self.input_entry.get()
+        output_file = self.output_entry.get()
+
+        if not input_file:
+            self.status_label.config(text="Error: Please select an input file.", fg="red")
             return
 
-        if not self.output_file:
-            messagebox.showerror("Error", "Please select an output file.")
+        if not output_file:
+            self.status_label.config(text="Error: Please select an output file.", fg="red")
             return
 
         try:
-            self.duration = float(self.bit_duration_entry.get())
-            self.freq0 = float(self.freq0_entry.get())
-            self.freq1 = float(self.freq1_entry.get())
-
-            self.binary_to_audio()
-            messagebox.showinfo("Success", "Conversion complete.")
-        except ValueError as e:
-            messagebox.showerror("Error", str(e))
+            self.process(input_file, output_file)
+            self.status_label.config(text="Finished", fg="green")
         except Exception as e:
-            messagebox.showerror("Error", str(e))
+            self.status_label.config(text=f"Error: {str(e)}", fg="red")
+            return
 
 
+if __name__ == '__main__':
+    freq0 = 1000
+    freq1 = 2000
+    duration = 0.01
+    sample_rate = 44100
 
-root = tk.Tk()
-gui = BinaryToAudioGUI(root)
-root.mainloop()
+    app = AudioToBinaryGUI(freq0, freq1, duration, sample_rate)
+    app.mainloop()
