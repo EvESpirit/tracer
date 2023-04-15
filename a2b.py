@@ -1,18 +1,16 @@
-# audio_to_binary.py
-
 import numpy as np
 import scipy.io.wavfile as wavfile
 
 
 def bit_string_to_bytes(bit_string):
     """
-    Converts a binary string to bytes.
+    Converts a binary string into a byte array.
 
     Args:
-    - bit_string (str): The binary string to convert.
+    - bit_string (str): The binary string to be converted.
 
     Returns:
-    - bytes: The resulting bytes object.
+    - bytes: The byte array converted from the binary string.
     """
     byte_array = bytearray()
     for i in range(0, len(bit_string), 8):
@@ -24,34 +22,37 @@ def bit_string_to_bytes(bit_string):
 
 class AudioToBinary:
     """
-    A class that can convert audio files into binary data.
+    A class for converting audio files to binary data.
 
     Attributes:
-    - freq0 (float): The frequency of the '0' tone.
-    - freq1 (float): The frequency of the '1' tone.
-    - duration (float): The duration of each tone in seconds.
+    - freq0 (int): The frequency for a binary 0.
+    - freq1 (int): The frequency for a binary 1.
+    - duration (float): The duration of each bit in seconds.
     - sample_rate (int): The sample rate of the audio file.
+    - mode (str): The encoding mode. Can be "bit" or "byte".
 
     Methods:
-    - load_audio(input_file): Loads an audio file and returns the sample rate and audio data.
-    - decode_bit(tone): Decodes a tone into a '0' or '1' bit.
-    - demodulate(audio_data): Demodulates audio data into a binary string.
-    - process(input_file, output_file): Loads an audio file, demodulates it, and writes the resulting binary data to a file.
+    - load_audio(input_file)
+    - decode_bit(tone)
+    - demodulate(audio_data)
+    - process(input_file, output_file)
     """
-    def __init__(self, freq0, freq1, duration, sample_rate):
+    def __init__(self, freq0, freq1, duration, sample_rate, mode):
         """
-        Initializes a new instance of the AudioToBinary class.
+        Initializes an AudioToBinary object.
 
         Args:
-        - freq0 (float): The frequency of the '0' tone.
-        - freq1 (float): The frequency of the '1' tone.
-        - duration (float): The duration of each tone in seconds.
+        - freq0 (int): The frequency for a binary 0.
+        - freq1 (int): The frequency for a binary 1.
+        - duration (float): The duration of each bit in seconds.
         - sample_rate (int): The sample rate of the audio file.
+        - mode (str): The encoding mode. Can be "bit" or "byte".
         """
         self.freq0 = freq0
         self.freq1 = freq1
         self.duration = duration
         self.sample_rate = sample_rate
+        self.mode = mode
 
     def load_audio(self, input_file):
         """
@@ -64,6 +65,8 @@ class AudioToBinary:
         - tuple: A tuple containing the sample rate and audio data as a numpy array.
         """
         try:
+            if not input_file.endswith(".wav"):
+                raise Exception("Error: Only WAV files are supported")
             sample_rate, audio_data = wavfile.read(input_file)
             return sample_rate, audio_data
         except FileNotFoundError:
@@ -73,13 +76,13 @@ class AudioToBinary:
 
     def decode_bit(self, tone):
         """
-        Decodes a tone into a '0' or '1' bit.
+        Decodes a binary value from a tone.
 
         Args:
-        - tone (numpy array): The audio data for a single tone.
+        - tone (numpy array): The audio data for a single bit.
 
         Returns:
-        - str: The decoded bit ('0' or '1').
+        - str: The binary value decoded from the tone.
         """
         tone_length = len(tone)
         freqs = np.fft.fftfreq(tone_length, 1 / self.sample_rate)
@@ -95,13 +98,18 @@ class AudioToBinary:
 
     def demodulate(self, audio_data):
         """
-        Demodulates audio data into a binary string.
+        Demodulates audio data into binary data.
 
         Args:
-        - audio_data (numpy array): The audio data to demodulate.
-                Returns:
-        - str: The demodulated binary string.
+        - audio_data (numpy array): The audio data to be demodulated.
+
+        Raises:
+        - ValueError: If an invalid encoding mode is specified.
+
+        Returns:
+        - str: The binary data demodulated from the audio data.
         """
+
         def bit_generator():
             bit_duration = int(self.sample_rate * self.duration)
             bit_count = len(audio_data) // bit_duration
@@ -112,15 +120,27 @@ class AudioToBinary:
                 tone = audio_data[start:end]
                 yield self.decode_bit(tone)
 
-        return ''.join(bit_generator())
+        if self.mode == "bit":
+            return ''.join(bit_generator())
+        elif self.mode == "byte":
+            byte_generator = ("".join(bits) for bits in zip(*([bit_generator()] * 8)))
+            return ''.join(byte_generator)
+        else:
+            raise ValueError("Invalid encoding mode")
 
     def process(self, input_file, output_file):
         """
-        Loads an audio file, demodulates it, and writes the resulting binary data to a file.
+        Processes an audio file and writes the resulting binary data to an output file.
 
         Args:
         - input_file (str): The path to the input audio file.
-        - output_file (str): The path to the output binary file.
+        - output_file (str): The path to the output file.
+
+        Raises:
+        - Exception: If there is an error reading or writing the file.
+
+        Returns:
+        - None [file output]
         """
         sample_rate, audio_data = self.load_audio(input_file)
         bit_string = self.demodulate(audio_data)
