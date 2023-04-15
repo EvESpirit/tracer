@@ -1,110 +1,136 @@
-import tkinter as tk
-from tkinter import filedialog
-from a2b import AudioToBinary
+import numpy as np
+import scipy.io.wavfile as wavfile
+import sys
+import os
+from concurrent.futures import ThreadPoolExecutor
 
 
-class AudioToBinaryGUI(tk.Tk, AudioToBinary):
+def generate_tone(bit, durat, frq0, frq1, sample):
     """
-    A GUI for the AudioToBinary class, allowing users to select input and output files,
-    convert audio files to binary using specified frequency and duration, and display 
-    conversion status.
+    Generate a sinusoidal wave with the specified frequency and duration.
 
-    Parameters:
-        freq0 (int): The frequency for 0 bit.
-        freq1 (int): The frequency for 1 bit.
-        duration (float): The duration of each bit.
-        sample_rate (int): The sampling rate for the audio file.
+    Args:
+        bit (str): The bit value, '0' or '1'.
+        durat (float): The duration of the generated wave in seconds.
+        frq0 (int): The frequency of the generated wave for bit '0'.
+        frq1 (int): The frequency of the generated wave for bit '1'.
+        sample (int): The audio sample rate in Hz.
 
-    Attributes:
-        status_label (tk.Label): A label displaying the conversion status.
-        input_entry (tk.Entry): An entry widget for input file path.
-        output_entry (tk.Entry): An entry widget for output file path.
-
+    Returns:
+        ndarray: An array of floating-point values representing the generated audio wave.
     """
+    if bit == '0':
+        freq = frq0
+    elif bit == '1':
+        freq = frq1
+    else:
+        raise ValueError("Invalid bit value")
 
-    def __init__(self, freq0, freq1, duration, sample_rate):
-        """
-        Initializes the AudioToBinaryGUI with specified frequency, duration, and sampling rate.
-        """
-        tk.Tk.__init__(self)
-        AudioToBinary.__init__(self, freq0, freq1, duration, sample_rate)
-        self.title("Audio to Binary Converter")
-        self.build_gui()
-
-    def build_gui(self):
-        """
-        Builds the GUI for the AudioToBinary class, creating the input and output file widgets, 
-        convert button, and status label.
-        """
-        self.status_label = tk.Label(self, text="", fg="green")
-        self.status_label.grid(row=3, column=1, pady=(5, 20))
-
-        input_label = tk.Label(self, text="Input File:")
-        input_label.grid(row=0, column=0, padx=(20, 5), pady=(20, 5), sticky="w")
-
-        self.input_entry = tk.Entry(self, width=50)
-        self.input_entry.grid(row=0, column=1, padx=(5, 20), pady=(20, 5))
-
-        input_button = tk.Button(self, text="Browse", command=self.browse_input)
-        input_button.grid(row=0, column=2, padx=(5, 20), pady=(20, 5))
-
-        output_label = tk.Label(self, text="Output File:")
-        output_label.grid(row=1, column=0, padx=(20, 5), pady=(5, 20), sticky="w")
-
-        self.output_entry = tk.Entry(self, width=50)
-        self.output_entry.grid(row=1, column=1, padx=(5, 20), pady=(5, 20))
-
-        output_button = tk.Button(self, text="Browse", command=self.browse_output)
-        output_button.grid(row=1, column=2, padx=(5, 20), pady=(5, 20))
-
-        convert_button = tk.Button(self, text="Convert", command=self.convert)
-        convert_button.grid(row=2, column=1, pady=(5, 20))
-
-    def browse_input(self):
-        """
-        Opens a file dialog window for selecting the input file path.
-        """
-        file_path = filedialog.askopenfilename()
-        self.input_entry.delete(0, tk.END)
-        self.input_entry.insert(0, file_path)
-
-    def browse_output(self):
-        """
-        Opens a file dialog window for selecting the output file path.
-        """
-        file_path = filedialog.asksaveasfilename()
-        self.output_entry.delete(0, tk.END)
-        self.output_entry.insert(0, file_path)
-
-    def convert(self):
-        """
-        Converts the selected input file to binary using specified frequency and duration,
-        and saves the output to the specified output file. Displays the status of the conversion in the status label.
-        """
-        input_file = self.input_entry.get()
-        output_file = self.output_entry.get()
-
-        if not input_file:
-            self.status_label.config(text="Error: Please select an input file.", fg="red")
-            return
-
-        if not output_file:
-            self.status_label.config(text="Error: Please select an output file.", fg="red")
-            return
-
-        try:
-            self.process(input_file, output_file)
-            self.status_label.config(text="Finished", fg="green")
-        except Exception as e:
-            self.status_label.config(text=f"Error: {str(e)}", fg="red")
-            return
+    t = np.linspace(0, durat, int(sample * durat), False)
+    tone = np.sin(freq * 2 * np.pi * t)
+    return tone
 
 
-if __name__ == '__main__':
-    freq0 = 1000
-    freq1 = 2000
-    duration = 0.01
-    sample_rate = 44100
+def generate_tone_byte(byte, durat, freqs, sample):
+    """
+    Generate a sinusoidal wave with the frequency specified by the given byte value.
 
-    app = AudioToBinaryGUI(freq0, freq1, duration, sample_rate)
-    app.mainloop()
+    Args:
+        byte (int): The byte value.
+        durat (float): The duration of the generated wave in seconds.
+        freqs (ndarray): An array of frequencies corresponding to the possible byte values.
+        sample (int): The audio sample rate in Hz.
+
+    Returns:
+        ndarray: An array of floating-point values representing the generated audio wave.
+    """
+    freq = freqs[byte]
+
+    t = np.linspace(0, durat, int(sample * durat), False)
+    tone = np.sin(freq * 2 * np.pi * t)
+    return tone
+
+
+def process_chunk(chunk, dur, fq0, fq1, samplerate, mode):
+    """
+    Generate an audio wave for a chunk of binary data.
+
+    Args:
+        chunk (str or bytes): The binary data chunk to process.
+        dur (float): The duration of each bit or byte in seconds.
+        fq0 (int): The frequency of the generated wave for bit '0' or the minimum frequency for byte mode.
+        fq1 (int): The frequency of the generated wave for bit '1' or the maximum frequency for byte mode.
+        samplerate (int): The audio sample rate in Hz.
+        mode (str): The encoding mode, either 'bit' or 'byte'.
+
+    Returns:
+        ndarray: An array of floating-point values representing the generated audio wave.
+    """
+    audio_data = np.array([], dtype=np.float32)
+
+    if mode == 'bit':
+        for bit in chunk:
+            tone = generate_tone(bit, dur, fq0, fq1, samplerate)
+            audio_data = np.concatenate((audio_data, tone))
+    elif mode == 'byte':
+        for byte in chunk:
+            tone = generate_tone_byte(byte, dur, np.linspace(fq0, fq1, 256), samplerate)
+            audio_data = np.concatenate((audio_data, tone))
+    else:
+        raise ValueError("Invalid encoding mode")
+
+    return audio_data
+
+
+def binary_to_audio(ifile, ofile, fq0, fq1, dur, samplerate, mode):
+    """
+    Convert a binary file to an audio wave.
+
+    Args:
+        ifile (str): The path to the input binary file.
+        ofile (str): The path to the output audio file.
+        fq0 (int): The frequency of the generated wave for bit '
+    Returns:
+        None
+    """
+    with open(ifile, 'rb') as file:
+        binary_data = file.read()
+
+    if mode == 'bit':
+        bit_string = ''.join(format(byte, '08b') for byte in binary_data)
+        num_threads = os.cpu_count()
+        chunk_size = len(bit_string) // num_threads
+        bit_chunks = [bit_string[i:i + chunk_size] for i in range(0, len(bit_string), chunk_size)]
+        data_chunks = bit_chunks
+    elif mode == 'byte':
+        num_threads = os.cpu_count()
+        chunk_size = len(binary_data) // num_threads
+        byte_chunks = [binary_data[i:i + chunk_size] for i in range(0, len(binary_data), chunk_size)]
+        data_chunks = byte_chunks
+    else:
+        raise ValueError("Invalid encoding mode")
+
+    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+        audio_chunks = list(executor.map(process_chunk, data_chunks, [dur] * num_threads, [fq0] * num_threads, [fq1] * num_threads, [samplerate] * num_threads, [mode] * num_threads))
+
+    audio_data = np.concatenate(audio_chunks)
+    wavfile.write(ofile, samplerate, audio_data)
+
+
+if __name__ == "__main__":
+
+    if len(sys.argv) != 4:
+        print("Usage: python binary_to_audio.py <input_file> <output_file> <mode>")
+        sys.exit(1)
+
+    input_file = sys.argv[1]
+    output_file = sys.argv[2]
+    mode = sys.argv[3]
+
+    freq0 = 1000  # Frequency for binary '0' or the minimum frequency for byte mode
+    freq1 = 2000  # Frequency for binary '1' or the maximum frequency for byte mode
+    duration = 0.01  # Duration of each bit or byte in seconds
+    sample_rate = 44100  # Audio sample rate
+
+    binary_to_audio(input_file, output_file, freq0, freq1, duration, sample_rate, mode)
+    print("Binary-to-audio conversion complete.")
